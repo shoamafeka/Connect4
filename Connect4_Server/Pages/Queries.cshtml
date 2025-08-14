@@ -1,0 +1,267 @@
+﻿@page
+@model Connect4_Server.Pages.QueriesModel
+@{
+    ViewData["Title"] = "Player Queries";
+}
+
+<h2>All Registered Players</h2>
+
+<h4>Select a player:</h4>
+
+<form method="get">
+    <div class="form-group d-flex">
+        <select name="SelectedPlayerId" class="form-control w-25">
+            <option value="">-- Choose Player --</option>
+            @foreach (var player in Model.Players)
+            {
+                if (player.PlayerId == Model.SelectedPlayerId)
+                {
+                    <option value="@player.PlayerId" selected>
+                        @player.FirstName
+                    </option>
+                }
+                else
+                {
+                    <option value="@player.PlayerId">
+                        @player.FirstName
+                    </option>
+                }
+            }
+        </select>
+        <button type="submit" class="btn btn-info ml-2">Show Details</button>
+    </div>
+</form>
+
+
+@if (Model.SelectedPlayer != null)
+{
+    <div class="mt-4 alert alert-secondary">
+        <h5>Selected Player:</h5>
+        <p><strong>Name:</strong> @Model.SelectedPlayer.FirstName</p>
+        <p><strong>Player ID:</strong> @Model.SelectedPlayer.PlayerId</p>
+        <p><strong>Phone:</strong> @Model.SelectedPlayer.Phone</p>
+        <p><strong>Country:</strong> @Model.SelectedPlayer.Country</p>
+
+        <div class="d-flex mt-2">
+            <a asp-page="/EditPlayer" asp-route-id="@Model.SelectedPlayer.Id" class="btn btn-warning">
+                ✏️ Edit Player
+            </a>
+
+            <form method="post"
+                  asp-page-handler="DeletePlayer"
+                  asp-route-id="@Model.SelectedPlayer.Id"
+                  onsubmit="return confirm('Are you sure you want to delete this player and all their games?');"
+                  class="ml-2">
+                <button type="submit" class="btn btn-danger">🗑️ Delete Player</button>
+            </form>
+        </div>
+    </div>
+
+}
+
+@if (Model.SelectedPlayerGames.Any())// Maybe we can put this in the form above?
+{
+    <h4>Games Played by @Model.SelectedPlayer.FirstName:</h4>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Start Time</th>
+                <th>Duration</th>
+                <th>Moves</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var game in Model.SelectedPlayerGames)
+            {
+                <tr>
+                    <td>@game.StartTime</td>
+                    <td>@game.Duration</td>
+                    <td>@game.Moves</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+
+
+
+
+
+
+@* This page displays a list of all registered players with options to sort by name *@
+<div class="mb-3">
+    <a class="btn btn-outline-primary" asp-page="/Queries" asp-route-sort="insensitive">Sort by Name (Case-Insensitive)</a>
+    <a class="btn btn-outline-secondary" asp-page="/Queries" asp-route-sort="sensitive">Sort by Name (Case-Sensitive)</a>
+</div>
+
+
+
+
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr>
+            <th>First Name</th>
+            <th>Player ID</th>
+            <th>Phone</th>
+            <th>Country</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var player in Model.Players)
+        {
+            <tr>
+                <td>@player.FirstName</td>
+                <td>@player.PlayerId</td>
+                <td>@player.Phone</td>
+                <td>@player.Country</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@* This page displays a list of players and their game counts: *@
+
+<h4 class="mt-5">🎮 Games Played per Player</h4>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Player Name</th>
+            <th>Number of Games</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var row in Model.PlayerGameCounts)
+        {
+            <tr>
+                <td>@row.Name</td>
+                <td>@row.GameCount</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@* This page displays the last game date for each player: *@
+
+<h4 class="mt-5">📅 Last Game Date Per Player (Case-Sensitive DESC)</h4>
+
+<table class="table table-striped table-bordered">
+    <thead>
+        <tr>
+            <th>Player Name</th>
+            <th>Last Game Date</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var row in Model.LastGameResults)
+        {
+            <tr>
+                <td>@row.Name</td>
+                <td>
+                    @if (row.LastGameDate.HasValue)
+                    {
+                        @row.LastGameDate.Value.ToString("yyyy-MM-dd HH:mm")
+                    }
+                    else
+                    {
+                        <span class="text-muted">No games</span>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@*  displays all games with detalis: *@
+
+<h4 class="mt-5">🎮 All Games Played</h4>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Game ID</th>
+            <th>Player</th>
+            <th>Start Time</th>
+            <th>Duration</th>
+            <th>Moves</th>
+			<th>Actions</th> <!-- Added Actions column for delete button -->
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var game in Model.AllGames)
+        {
+            <tr>
+                <td>@game.GameId</td>
+                <td>@game.PlayerName</td>
+                <td>@game.StartTime.ToString("yyyy-MM-dd HH:mm")</td>
+                <td>@game.Duration</td>
+                <td>@game.Moves</td>
+
+                @* Option to delete a game *@
+                <td>
+                    <form method="post" asp-page-handler="DeleteGame" asp-route-id="@game.GameId" onsubmit="return confirm('Are you sure you want to delete this game?');">
+                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@*  displays games without duplicates  : *@
+<h3 class="mt-5">🎯 Distinct Games by Player</h3>
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Player</th>
+            <th>Start Time</th>
+            <th>Duration</th>
+            <th>Moves</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var game in Model.UniqueGamesByPlayer)
+        {
+            <tr>
+                <td>@game.PlayerName</td>
+                <td>@game.StartTime</td>
+                <td>@game.Duration</td>
+                <td>@game.Moves</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@* This page displays players grouped by the number of games they have played: *@
+<h3>🎮 Players Grouped by Number of Games</h3>
+
+@foreach (var group in Model.GroupedPlayersByGameCount)
+{
+    <h4>@group.GameCount @((group.GameCount == 1) ? "Game" : "Games"):</h4>
+    <ul>
+        @foreach (var player in group.Players)
+        {
+            <li>@player.FirstName (@player.PlayerId)</li>
+        }
+    </ul>
+}
+
+@* This page displays players grouped by country: *@
+<h3 class="mt-5">🌍 Players Grouped by Country</h3>
+
+@foreach (var group in Model.GroupedPlayersByCountry)
+{
+    <h4>@group.Country</h4>
+    <ul>
+        @foreach (var player in group.Players)
+        {
+            <li>@player.FirstName (@player.PlayerId)</li>
+        }
+    </ul>
+}
+
+
+
+
+

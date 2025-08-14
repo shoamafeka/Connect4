@@ -1,0 +1,50 @@
+﻿@page
+@model Connect4_Server.Pages.EditPlayerModel
+@{
+	ViewData["Title"] = "Edit Player";
+}
+
+<h2>Edit Player</h2>
+
+<form method="post">
+    <input type="hidden" asp-for="Player.Id" />
+
+    <div class="form-group">
+        <label asp-for="Player.FirstName"></label>
+        <input asp-for="Player.FirstName" class="form-control" />
+        <span asp-validation-for="Player.FirstName" class="text-danger"></span>
+    </div>
+
+    <div class="form-group">
+        <label asp-for="Player.PlayerId"></label>
+        @if (Model.HasGames)
+        {
+            <input asp-for="Player.PlayerId" class="form-control" readonly />
+            <small class="text-muted">Player ID cannot be changed after playing games.</small>
+        }
+        else
+        {
+            <input asp-for="Player.PlayerId" class="form-control" />
+            <span asp-validation-for="Player.PlayerId" class="text-danger"></span>
+        }
+    </div>
+
+    <div class="form-group">
+        <label asp-for="Player.Phone"></label>
+        <input asp-for="Player.Phone" class="form-control" />
+        <span asp-validation-for="Player.Phone" class="text-danger"></span>
+    </div>
+
+    <div class="form-group">
+        <label asp-for="Player.Country"></label>
+        <input asp-for="Player.Country" class="form-control" />
+        <span asp-validation-for="Player.Country" class="text-danger"></span>
+    </div>
+
+    <button type="submit" class="btn btn-success mt-2">Save Changes</button>
+    <a asp-page="/Queries" class="btn btn-secondary mt-2 ml-2">Cancel</a>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

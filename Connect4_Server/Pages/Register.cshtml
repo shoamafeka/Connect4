@@ -1,0 +1,47 @@
+﻿@page
+@model Connect4_Server.Pages.RegisterModel
+@{
+	ViewData["Title"] = "Player Registration";
+
+}
+
+<h2>Player Registration</h2>
+
+<form method="post" asp-page-handler="">
+    <div class="form-group">
+        <label asp-for="Player.FirstName"></label>
+        <input asp-for="Player.FirstName" class="form-control" />
+        <span asp-validation-for="Player.FirstName" class="text-danger"></span>
+    </div>
+
+    <div class="form-group">
+        <label asp-for="Player.PlayerId">Player ID (1–1000)</label>
+        <input asp-for="Player.PlayerId" class="form-control" />
+        <span asp-validation-for="Player.PlayerId" class="text-danger"></span>
+    </div>
+
+    <div class="form-group">
+        <label asp-for="Player.Phone"></label>
+        <input asp-for="Player.Phone" class="form-control" />
+        <span asp-validation-for="Player.Phone" class="text-danger"></span>
+    </div>
+
+    <div class="form-group">
+        <label asp-for="Player.Country">Country</label>
+        <select asp-for="Player.Country" class="form-control">
+            <option value="">-- Select Country --</option>
+            <option>Israel</option>
+            <option>USA</option>
+            <option>UK</option>
+            <option>France</option>
+            <option>Germany</option>
+        </select>
+        <span asp-validation-for="Player.Country" class="text-danger"></span>
+    </div>
+
+    <button type="submit" class="btn btn-primary mt-2">Register</button>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
