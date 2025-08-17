@@ -1,34 +1,42 @@
 ﻿@page
-@model Connect4_Server.Pages.RegisterModel
-@{
-	ViewData["Title"] = "Player Registration";
 
+
+@if (TempData["StatusMessage"] is string msg)
+{
+    <div class="alert alert-success">@msg</div>
 }
 
-<h2>Player Registration</h2>
+@model Connect4_Server.Pages.RegisterModel
+@{
+    ViewData["Title"] = "Player Registration";
+}
 
-<form method="post" asp-page-handler="">
-    <div class="form-group">
-        <label asp-for="Player.FirstName"></label>
-        <input asp-for="Player.FirstName" class="form-control" />
+<h2 class="mb-3">Player Registration</h2>
+
+<form method="post" novalidate>
+    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+    <div class="form-group mb-2">
+        <label asp-for="Player.FirstName" class="form-label"></label>
+        <input asp-for="Player.FirstName" class="form-control" placeholder="Enter your first name" />
         <span asp-validation-for="Player.FirstName" class="text-danger"></span>
     </div>
 
-    <div class="form-group">
-        <label asp-for="Player.PlayerId">Player ID (1–1000)</label>
-        <input asp-for="Player.PlayerId" class="form-control" />
+    <div class="form-group mb-2">
+        <label asp-for="Player.PlayerId" class="form-label">Player ID (1–1000)</label>
+        <input asp-for="Player.PlayerId" class="form-control" placeholder="Choose a unique number" />
         <span asp-validation-for="Player.PlayerId" class="text-danger"></span>
     </div>
 
-    <div class="form-group">
-        <label asp-for="Player.Phone"></label>
-        <input asp-for="Player.Phone" class="form-control" />
+    <div class="form-group mb-2">
+        <label asp-for="Player.Phone" class="form-label"></label>
+        <input asp-for="Player.Phone" class="form-control" placeholder="Digits only" />
         <span asp-validation-for="Player.Phone" class="text-danger"></span>
     </div>
 
-    <div class="form-group">
-        <label asp-for="Player.Country">Country</label>
-        <select asp-for="Player.Country" class="form-control">
+    <div class="form-group mb-3">
+        <label asp-for="Player.Country" class="form-label">Country</label>
+        <select asp-for="Player.Country" class="form-select">
             <option value="">-- Select Country --</option>
             <option>Israel</option>
             <option>USA</option>
@@ -39,7 +47,7 @@
         <span asp-validation-for="Player.Country" class="text-danger"></span>
     </div>
 
-    <button type="submit" class="btn btn-primary mt-2">Register</button>
+    <button type="submit" class="btn btn-primary">Register</button>
 </form>
 
 @section Scripts {

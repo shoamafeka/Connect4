@@ -1,0 +1,41 @@
+﻿@page
+@model Connect4_Server.Pages.LoginModel
+@{
+    ViewData["Title"] = "Login";
+}
+
+<h2>Login</h2>
+
+@if (Model.Players.Any())
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Player ID</th>
+                <th>Name</th>
+                <th>Country</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var player in Model.Players)
+            {
+                <tr>
+                    <td>@player.PlayerId</td>
+                    <td>@player.FirstName</td>
+                    <td>@player.Country</td>
+                    <td>
+                        <form method="post">
+                            <input type="hidden" name="playerId" value="@player.Id" />
+                            <button type="submit" class="btn btn-primary">Select</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No registered players found. Please <a asp-page="/Register">register here</a>.</p>
+}

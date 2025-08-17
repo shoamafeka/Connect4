@@ -46,3 +46,11 @@ button.accept-policy {
   white-space: nowrap;
   line-height: 60px;
 }
+
+form .form-label {
+    font-weight: 600;
+}
+
+form .text-danger {
+    font-size: 0.9rem;
+}

@@ -1,0 +1,31 @@
+﻿@page
+@model Connect4_Server.Pages.NewGameModel
+@{
+    ViewData["Title"] = "New Game";
+}
+
+<h2>Start New Game</h2>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-warning">@Model.StatusMessage</div>
+}
+
+<div asp-validation-summary="All" class="text-danger"></div>
+
+@if (Model.PlayerId > 0)
+{
+    <p><strong>Playing as:</strong> @Model.PlayerName (External PlayerId: @Model.PlayerId)</p>
+
+    <form method="post" asp-page-handler="StartGame">
+        <input type="hidden" asp-for="PlayerId" />
+        <button type="submit" class="btn btn-primary">Start Game</button>
+    </form>
+}
+
+@if (Model.GameId > 0)
+{
+    <div class="alert alert-success mt-3">
+        Game started! Game ID: <strong>@Model.GameId</strong>
+    </div>
+}

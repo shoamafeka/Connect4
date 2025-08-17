@@ -8,59 +8,55 @@ using System.Linq;
 
 namespace Connect4_Server.Pages
 {
-
-    // For query 19 Displaying all games with all details.
     public class GameDetails
     {
         public int GameId { get; set; }
         public string PlayerName { get; set; }
         public DateTime StartTime { get; set; }
         public TimeSpan Duration { get; set; }
-        public string Moves { get; set; }
+
+        // מה שנציג בטבלאות: רשימת עמודות לפי סדר תורות (0..6)
+        public string MovesColumns { get; set; } = string.Empty;
+
+        // אופציונלי: להשאיר את ה-board השטוח למקרה שתרצה להציגו ב-<details>
+        public string? RawBoard { get; set; }
     }
-    // For query 18
-    //Displaying all players with descending order sorting by name but case sensitivity
-    //,when only the names should be displayed and
-    //in addition only the date of the last game they played. (i.e., only two columns)
+
+
     public class PlayerLastGame
     {
         public string Name { get; set; }
         public DateTime? LastGameDate { get; set; }
-
-
     }
-    // For query 22
+
     public class PlayerGameCount
     {
         public string Name { get; set; }
         public int GameCount { get; set; }
     }
 
-    // For query 23, we can't use the PlayerGameCount class directly
-    // because it doesn't include all the players that playes the same number of games.
     public class PlayerGroupByGames
     {
-        public int GameCount { get; set; }  //0,1,2,3
+        public int GameCount { get; set; }
         public List<Player> Players { get; set; }
     }
-    // For query 24
+
     public class PlayerGroupByCountry
     {
         public string Country { get; set; }
         public List<Player> Players { get; set; }
     }
 
-
     public class QueriesModel : PageModel
     {
         public List<GameDetails> UniqueGamesByPlayer { get; set; } = new();
-        public List<Game> SelectedPlayerGames { get; set; } = new List<Game>();
+        public List<GameDetails> SelectedPlayerGames { get; set; } = new();
         public List<GameDetails> AllGames { get; set; } = new();
         public List<PlayerLastGame> LastGameResults { get; set; } = new();
         public List<PlayerGameCount> PlayerGameCounts { get; set; } = new();
-        public List<PlayerGroupByGames> GroupedPlayersByGameCount { get; set; } = new List<PlayerGroupByGames>();
-        public List<PlayerGroupByCountry> GroupedPlayersByCountry { get; set; } = new List<PlayerGroupByCountry>();
-
+        public List<PlayerGroupByGames> GroupedPlayersByGameCount { get; set; } = new();
+        public List<PlayerGroupByCountry> GroupedPlayersByCountry { get; set; } = new();
+        public List<Player> Players { get; set; } = new();
 
         private readonly AppDbContext _context;
 
@@ -69,11 +65,8 @@ namespace Connect4_Server.Pages
             _context = context;
         }
 
-        public List<Player> Players { get; set; } = new List<Player>();
-
         [BindProperty(SupportsGet = true)]
         public int? SelectedPlayerId { get; set; }
-
         public Player SelectedPlayer { get; set; }
 
         public void OnGet(string sort = "none")
@@ -94,18 +87,33 @@ namespace Connect4_Server.Pages
             var query = _context.Players.AsQueryable();
 
             if (sort == "insensitive")
+            {
+                // Case-insensitive ascending order
                 query = query.OrderBy(p => p.FirstName.ToLower());
+            }
             else if (sort == "sensitive")
+            {
+                // Case-sensitive descending order
+                query = query.OrderByDescending(
+                    p => EF.Functions.Collate(p.FirstName, "Latin1_General_CS_AS")
+                );
+            }
+            else
+            {
+                // Default ordering
                 query = query.OrderBy(p => p.FirstName);
+            }
 
             Players = query.ToList();
         }
+
 
         private void LoadSelectedPlayer()
         {
             if (SelectedPlayerId != null)
             {
-                SelectedPlayer = _context.Players.FirstOrDefault(p => p.PlayerId == SelectedPlayerId);
+                SelectedPlayer = _context.Players
+                    .FirstOrDefault(p => p.PlayerId == SelectedPlayerId);
             }
         }
 
@@ -114,11 +122,25 @@ namespace Connect4_Server.Pages
             if (SelectedPlayerId != null)
             {
                 SelectedPlayerGames = _context.Games
+                    .Include(g => g.Player)
+                    .Include(g => g.MoveList)
                     .Where(g => g.Player.PlayerId == SelectedPlayerId)
                     .OrderByDescending(g => g.StartTime)
+                    .Select(g => new GameDetails
+                    {
+                        GameId = g.Id,
+                        PlayerName = g.Player.FirstName,
+                        StartTime = g.StartTime,
+                        Duration = g.Duration,
+                        MovesColumns = string.Join(",", g.MoveList
+                            .OrderBy(m => m.MoveNumber)
+                            .Select(m => m.Column)),
+                        RawBoard = g.Moves
+                    })
                     .ToList();
             }
         }
+
 
         private void LoadGameCounts()
         {
@@ -129,6 +151,7 @@ namespace Connect4_Server.Pages
                     GameCount = p.Games.Count()
                 })
                 .OrderByDescending(p => p.GameCount)
+                .ThenBy(p => p.Name)
                 .ToList();
         }
 
@@ -150,22 +173,29 @@ namespace Connect4_Server.Pages
         private void LoadAllGames()
         {
             AllGames = _context.Games
+                .Include(g => g.Player)
+                .Include(g => g.MoveList)
+                .OrderByDescending(g => g.StartTime)
                 .Select(g => new GameDetails
                 {
                     GameId = g.Id,
                     PlayerName = g.Player.FirstName,
                     StartTime = g.StartTime,
                     Duration = g.Duration,
-                    Moves = g.Moves
+                    MovesColumns = string.Join(",", g.MoveList
+                        .OrderBy(m => m.MoveNumber)
+                        .Select(m => m.Column)),
+                    RawBoard = g.Moves
                 })
-                .OrderByDescending(g => g.StartTime)
                 .ToList();
         }
+
 
         private void LoadUniqueGamesByPlayer()
         {
             UniqueGamesByPlayer = _context.Games
                 .Include(g => g.Player)
+                .Include(g => g.MoveList)
                 .AsEnumerable()
                 .GroupBy(g => g.PlayerId)
                 .Select(g => g.OrderByDescending(x => x.StartTime).First())
@@ -175,10 +205,14 @@ namespace Connect4_Server.Pages
                     PlayerName = g.Player.FirstName,
                     StartTime = g.StartTime,
                     Duration = g.Duration,
-                    Moves = g.Moves
+                    MovesColumns = string.Join(",", g.MoveList
+                        .OrderBy(m => m.MoveNumber)
+                        .Select(m => m.Column)),
+                    RawBoard = g.Moves
                 })
                 .ToList();
         }
+
 
         private void LoadGroupedPlayersByGameCount()
         {
@@ -219,24 +253,22 @@ namespace Connect4_Server.Pages
                 _context.Games.Remove(game);
                 _context.SaveChanges();
             }
-
-            return RedirectToPage(); // Refresh page
+            return RedirectToPage();
         }
-        
+
         public IActionResult OnPostDeletePlayer(int id)
         {
-            var player = _context.Players.Include(p => p.Games).FirstOrDefault(p => p.Id == id);
+            var player = _context.Players
+                .Include(p => p.Games)
+                .FirstOrDefault(p => p.Id == id);
 
             if (player != null)
             {
-                // Remove all games associated with the player
                 _context.Games.RemoveRange(player.Games);
                 _context.Players.Remove(player);
                 _context.SaveChanges();
             }
-            return RedirectToPage(); // Refresh page
+            return RedirectToPage();
         }
-
-
     }
 }

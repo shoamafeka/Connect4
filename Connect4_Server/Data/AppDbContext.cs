@@ -10,11 +10,13 @@ namespace Connect4_Server.Data
         {
         }
 
+        public DbSet<Move> Moves { get; set; }
         public DbSet<Player> Players { get; set; }
         public DbSet<Game> Games { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // Ensure external PlayerId (1..1000) is globally unique
             modelBuilder.Entity<Player>()
                 .HasIndex(p => p.PlayerId)
                 .IsUnique();

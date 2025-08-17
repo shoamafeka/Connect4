@@ -1,26 +1,34 @@
 using Connect4_Server.Data;
- // Add this using directive
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// EF Core DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-
-// Add services to the container.
+// Razor Pages + Web API
 builder.Services.AddRazorPages();
-
-// Add Controllers (for WinForms API calls)
 builder.Services.AddControllers();
+
+// Register IHttpClientFactory
+builder.Services.AddHttpClient();
+
+// Session (required for HttpContext.Session.GetInt32/SetInt32)
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Error handling + HTTPS/static
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
@@ -29,10 +37,13 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-app.UseAuthorization();
-// Map API controllers
-app.MapControllers();
+// Enable session BEFORE authorization/endpoints
+app.UseSession();
 
+app.UseAuthorization();
+
+// Map endpoints
+app.MapControllers();
 app.MapRazorPages();
 
 app.Run();
