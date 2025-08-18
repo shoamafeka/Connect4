@@ -4,6 +4,11 @@
     ViewData["Title"] = "New Game";
 }
 
+@* New Game page
+   - Requires a logged-in user (session).
+   - Shows the current player (name + external PlayerId 1..1000).
+   - Posts to OnPostStartGameAsync (handler = "StartGame") which calls API /api/GameApi/start. *@
+
 <h2>Start New Game</h2>
 
 @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
@@ -17,7 +22,7 @@
 {
     <p><strong>Playing as:</strong> @Model.PlayerName (External PlayerId: @Model.PlayerId)</p>
 
-    <form method="post" asp-page-handler="StartGame">
+    <form method="post" asp-page-handler="StartGame" asp-antiforgery="true">
         <input type="hidden" asp-for="PlayerId" />
         <button type="submit" class="btn btn-primary">Start Game</button>
     </form>

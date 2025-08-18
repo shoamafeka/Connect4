@@ -4,6 +4,19 @@
     ViewData["Title"] = "Player Queries";
 }
 
+@* Queries dashboard:
+   - Implements the assignment queries (17–24) over Players/Games.
+   - Sections:
+     1) Player picker + details + edit/delete actions
+     2) Selected player's games with "Replay" action
+     3) Players list (sortable)
+     4) Games per player (counts)
+     5) Last game date per player (case-sensitive DESC name)
+     6) All games
+     7) Distinct games by player (one per player)
+     8) Grouping by number of games
+     9) Grouping by country *@
+
 @if (TempData["Error"] != null)
 {
     <div class="alert alert-danger">@TempData["Error"]</div>
@@ -13,9 +26,9 @@
     <div class="alert alert-info">@TempData["Info"]</div>
 }
 
-
 <h2>All Registered Players</h2>
 
+@* Player picker (by external PlayerId) *@
 <h4>Select a player:</h4>
 <form method="get">
     <div class="form-group d-flex">
@@ -37,6 +50,7 @@
     </div>
 </form>
 
+@* Selected player card with edit/delete *@
 @if (Model.SelectedPlayer != null)
 {
     <div class="mt-4 alert alert-secondary">
@@ -51,17 +65,20 @@
                 ✏️ Edit Player
             </a>
 
+            @* Delete player (and their games) *@
             <form method="post"
                   asp-page-handler="DeletePlayer"
                   asp-route-id="@Model.SelectedPlayer.Id"
                   onsubmit="return confirm('Are you sure you want to delete this player and all their games?');"
-                  class="ml-2">
+                  class="ml-2"
+                  asp-antiforgery="true">
                 <button type="submit" class="btn btn-danger" title="Delete Player">🗑</button>
             </form>
         </div>
     </div>
 }
 
+@* Selected player's games + Replay action (server-side replay) *@
 @if (Model.SelectedPlayerGames.Any())
 {
     <h4 class="mt-4">Games Played by @Model.SelectedPlayer.FirstName:</h4>
@@ -71,7 +88,7 @@
                 <th>Start Time</th>
                 <th>Duration</th>
                 <th>Moves</th>
-                <th>Actions</th> 
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -82,7 +99,8 @@
                     <td>@game.Duration.ToString(@"hh\:mm\:ss")</td>
                     <td>@game.MovesColumns</td>
                     <td>
-                        <form method="post" asp-page-handler="Replay" class="d-inline">
+                        @* Replay launches the client with server replay parameters *@
+                        <form method="post" asp-page-handler="Replay" class="d-inline" asp-antiforgery="true">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="gameId" value="@game.GameId" />
                             <input type="hidden" name="playerId" value="@Model.SelectedPlayerId" />
@@ -97,14 +115,15 @@
     </table>
 }
 
-
 <hr class="mt-5" />
 
+@* Sorting controls for players list *@
 <div class="mb-3">
     <a class="btn btn-outline-primary" asp-page="/Queries" asp-route-sort="insensitive">Sort by Name (Case-Insensitive)</a>
     <a class="btn btn-outline-secondary" asp-page="/Queries" asp-route-sort="sensitive">Sort by Name (Case-Sensitive)</a>
 </div>
 
+@* 17. All players with all details (sortable) *@
 <table class="table table-bordered table-striped">
     <thead>
         <tr>
@@ -129,6 +148,7 @@
 
 <hr class="mt-5" />
 
+@* 22. Games per player (counts) *@
 <h4>🎮 Games Played per Player</h4>
 <table class="table table-bordered">
     <thead>
@@ -150,6 +170,7 @@
 
 <hr class="mt-5" />
 
+@* 18. Last game date per player (case-sensitive name sort DESC, only name + last date) *@
 <h4>📅 Last Game Date Per Player (Case-Sensitive DESC)</h4>
 <table class="table table-striped table-bordered">
     <thead>
@@ -180,6 +201,7 @@
 
 <hr class="mt-5" />
 
+@* 19. All games with all details *@
 <h4>🎮 All Games Played</h4>
 <table class="table table-bordered">
     <thead>
@@ -202,7 +224,7 @@
                 <td>@game.Duration.ToString(@"hh\:mm\:ss")</td>
                 <td>@game.MovesColumns</td>
                 <td>
-                    <form method="post" asp-page-handler="DeleteGame" asp-route-id="@game.GameId" onsubmit="return confirm('Are you sure you want to delete this game?');">
+                    <form method="post" asp-page-handler="DeleteGame" asp-route-id="@game.GameId" onsubmit="return confirm('Are you sure you want to delete this game?');" asp-antiforgery="true">
                         <button type="submit" class="btn btn-sm btn-danger" title="Delete Game">🗑</button>
                     </form>
                 </td>
@@ -213,6 +235,7 @@
 
 <hr class="mt-5" />
 
+@* 20. Distinct games (by player) using a representative game per player *@
 <h3>🎯 Distinct Games by Player</h3>
 <table class="table table-bordered">
     <thead>
@@ -238,6 +261,7 @@
 
 <hr class="mt-5" />
 
+@* 23. Group players by number of games (descending) *@
 <h3>🎮 Players Grouped by Number of Games</h3>
 @foreach (var group in Model.GroupedPlayersByGameCount)
 {
@@ -252,6 +276,7 @@
 
 <hr class="mt-5" />
 
+@* 24. Group players by country *@
 <h3>🌍 Players Grouped by Country</h3>
 @foreach (var group in Model.GroupedPlayersByCountry)
 {

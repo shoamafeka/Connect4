@@ -4,6 +4,11 @@
     ViewData["Title"] = "Home page";
 }
 
+@* Home page:
+   - Shows a temp status message if exists (e.g., after login/register/logout).
+   - Displays project title and authors.
+   - No interactive logic here (GET only). *@
+
 @if (TempData["StatusMessage"] != null)
 {
     <div class="alert alert-success text-center">
@@ -13,5 +18,5 @@
 
 <div class="text-center">
     <h1 class="display-4">Connect4 Game</h1>
-    <h1 class="display-4">By Shoam Tomer & Amit Donel</h1>
+    <h1 class="display-4">By Shoam Tomer &amp; Amit Donel</h1>
 </div>

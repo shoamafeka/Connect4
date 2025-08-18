@@ -1,4 +1,15 @@
 ﻿@using Microsoft.AspNetCore.Http
+@* Layout for the Razor Pages site.
+   Uses Session keys:
+   - "CurrentPlayerId" (int) to detect login state
+   - "CurrentPlayerName" (string) to display greeting
+   Requires AddSession()/UseSession() in Program.cs *@
+
+@{
+    // Centralize session reads for readability
+    var isLoggedIn = Context.Session.GetInt32("CurrentPlayerId") != null;
+    var playerName = Context.Session.GetString("CurrentPlayerName");
+}
 
 <!DOCTYPE html>
 <html lang="en">
@@ -19,23 +30,23 @@
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
                 </button>
+
                 <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
-                    <!-- LEFT SIDE NAV LINKS -->
+                    @* LEFT SIDE NAV LINKS *@
                     <ul class="navbar-nav me-auto">
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-page="/Index">🏠 Home</a>
                         </li>
 
-                        @if (Context.Session.GetInt32("CurrentPlayerId") != null)
+                        @* Show New Game only when logged in; otherwise show Register *@
+                        @if (isLoggedIn)
                         {
-                            <!-- Show New Game only when logged in -->
                             <li class="nav-item">
                                 <a class="nav-link text-dark" asp-page="/NewGame">🎮 New Game</a>
                             </li>
                         }
                         else
                         {
-                            <!-- Show Register only when not logged in -->
                             <li class="nav-item">
                                 <a class="nav-link text-dark" asp-page="/Register">🧍 Register</a>
                             </li>
@@ -49,12 +60,12 @@
                         </li>
                     </ul>
 
-                    <!-- RIGHT SIDE LOGIN/LOGOUT -->
+                    @* RIGHT SIDE LOGIN/LOGOUT *@
                     <ul class="navbar-nav">
-                        @if (Context.Session.GetInt32("CurrentPlayerId") != null)
+                        @if (isLoggedIn)
                         {
                             <li class="nav-item">
-                                <span class="navbar-text">Hello, @Context.Session.GetString("CurrentPlayerName") !</span>
+                                <span class="navbar-text">Hello, @playerName !</span>
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link text-dark" asp-page="/Logout">🚪 Logout</a>
@@ -68,10 +79,10 @@
                         }
                     </ul>
                 </div>
-
             </div>
         </nav>
     </header>
+
     <div class="container">
         <main role="main" class="pb-3">
             @RenderBody()

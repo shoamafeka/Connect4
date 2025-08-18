@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Http;
-using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
 using System;
@@ -11,14 +10,19 @@ using System.Diagnostics; // Process
 
 namespace Connect4_Server.Pages
 {
+    // NewGame page model:
+    // - Reads the currently logged-in player from Session (CurrentPlayerId = internal DB Id).
+    // - Displays player name + external PlayerId (1..1000).
+    // - On POST, calls API /api/GameApi/start with the external PlayerId, and launches the WinForms client.
     public class NewGameModel : PageModel
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly AppDbContext _db;
 
-        // Base URL of your server (https profile). We will derive the API base from this.
+        // Base URL of this server (https). API base is derived from it.
         private const string ServerBase = "https://localhost:7150/";
-        // Full path to your client EXE. Adjust if your path is different.
+
+        // Full path to the WinForms client EXE. Adjust to your machine if needed.
         private const string ClientExePath = @"C:\Users\user\Connect4\Connect4\Connect4_Client\bin\Debug\Connect4_Client.exe";
 
         public NewGameModel(IHttpClientFactory httpClientFactory, AppDbContext db)
@@ -27,7 +31,7 @@ namespace Connect4_Server.Pages
             _db = db;
         }
 
-        // External PlayerId (1..1000) that /api/GameApi/start expects
+        // External PlayerId (1..1000) expected by /api/GameApi/start
         [BindProperty]
         public int PlayerId { get; set; }
 
@@ -36,43 +40,37 @@ namespace Connect4_Server.Pages
         public int GameId { get; set; }
         public string? StatusMessage { get; set; }
 
+        // GET: resolve the currently logged-in player from Session and populate display fields.
         public async Task OnGetAsync()
         {
-            // ???? ???? ?? ?-PK ?????? ??????/????? ??????
-            var dbPk = HttpContext.Session.GetInt32("CurrentPlayerDbId");
-            // ???? ?? ?? ?-ID ??????? (?? ????????? ?????: ????? ????? PK)
-            var sessId = HttpContext.Session.GetInt32("CurrentPlayerId");
+            // Session convention in this app:
+            // - "CurrentPlayerId" stores the INTERNAL DB Id (set by Login).
+            // - "CurrentPlayerName" stores the player's first name.
+            var dbId = HttpContext.Session.GetInt32("CurrentPlayerId");
+            if (dbId is null)
+            {
+                StatusMessage = "No logged-in player found. Please login first.";
+                return;
+            }
 
-            Models.Player? player = null;
-
-            // 1) ??? DB PK (???? ??????)
-            if (dbPk is not null)
-                player = await _db.Players.FirstOrDefaultAsync(p => p.Id == dbPk.Value);
-
-            // 2) ?? ?? ????: ??? ???? ?? CurrentPlayerId ?-ExternalId (1..1000)
-            if (player is null && sessId is not null)
-                player = await _db.Players.FirstOrDefaultAsync(p => p.PlayerId == sessId.Value);
-
-            // 3) ?????? ?????: ????? ??-session ??? PK ??? CurrentPlayerId
-            if (player is null && sessId is not null)
-                player = await _db.Players.FirstOrDefaultAsync(p => p.Id == sessId.Value);
-
+            // Load player by internal PK
+            var player = await _db.Players.FirstOrDefaultAsync(p => p.Id == dbId.Value);
             if (player is null)
             {
                 StatusMessage = "No logged-in player found. Please login first.";
                 return;
             }
 
-            // ????? ???? ???? (??? ??? ????? ????? ???????)
-            HttpContext.Session.SetInt32("CurrentPlayerDbId", player.Id);        // DB PK
-            HttpContext.Session.SetInt32("CurrentPlayerId", player.PlayerId);    // External ID (1..1000)
+            // Keep session keys consistent (internal Id + name). Do NOT overwrite CurrentPlayerId with external ID.
+            HttpContext.Session.SetInt32("CurrentPlayerId", player.Id);      // internal DB Id
             HttpContext.Session.SetString("CurrentPlayerName", player.FirstName);
 
-            // ????? ?????? ??????? ?-API
-            PlayerId = player.PlayerId;     // external id to send to /start
+            // Populate fields for the page and for POST to the API
+            PlayerId = player.PlayerId;   // external 1..1000 (sent to /start)
             PlayerName = player.FirstName;
         }
 
+        // POST (handler: StartGame): call API /api/GameApi/start and try to launch the client app.
         public async Task<IActionResult> OnPostStartGameAsync()
         {
             if (PlayerId <= 0)
@@ -84,7 +82,7 @@ namespace Connect4_Server.Pages
             var client = _httpClientFactory.CreateClient();
             client.BaseAddress = new Uri(ServerBase);
 
-            // POST api/GameApi/start -> returns GameStateDto (we only need GameId)
+            // POST api/GameApi/start -> returns GameStateDto with GameId
             var response = await client.PostAsJsonAsync("api/GameApi/start", new { PlayerId = PlayerId });
             if (!response.IsSuccessStatusCode)
             {
@@ -100,10 +98,10 @@ namespace Connect4_Server.Pages
 
             if (GameId > 0)
             {
-                // Keep for reference if needed by website
+                // Keep GameId in session for potential future use on the website
                 HttpContext.Session.SetInt32("CurrentGameId", GameId);
 
-                // Launch the WinForms client and pass arguments
+                // Prepare arguments for the client EXE
                 string apiBase = ServerBase.TrimEnd('/') + "/api/GameApi/";
                 string args = $"--gameId={GameId} --playerId={PlayerId} --api=\"{apiBase}\"";
 
@@ -119,7 +117,7 @@ namespace Connect4_Server.Pages
                 }
                 catch (Exception ex)
                 {
-                    // If launching fails, still show the Game ID so you can start client manually
+                    // If launching fails, still show the Game ID so the client can be started manually.
                     StatusMessage = $"Started game (ID {GameId}) but failed to launch client: {ex.Message}";
                 }
             }
@@ -131,6 +129,7 @@ namespace Connect4_Server.Pages
             return Page();
         }
 
+        // Minimal shape of the response from /api/GameApi/start
         public class StartGameResponse
         {
             public int GameId { get; set; }

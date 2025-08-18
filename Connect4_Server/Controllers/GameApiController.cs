@@ -5,11 +5,13 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.EntityFrameworkCore;
-
 
 namespace Connect4_Server.Controllers
 {
+    // Game API: endpoints used by the WinForms client to register/get players,
+    // start a new game, submit moves, and fetch game state (board + move list).
+    // Board encoding: 6x7 matrix, 0=empty, 1=human, 2=server. Stored as a CSV string.
+
     [ApiController]
     [Route("api/[controller]")]
     public class GameApiController : ControllerBase
@@ -21,6 +23,7 @@ namespace Connect4_Server.Controllers
         public GameApiController(AppDbContext context) => _context = context;
 
         // GET: api/GameApi/player/{playerId}
+        // Returns a single player by their external PlayerId (1..1000).
         [HttpGet("player/{playerId:int}")]
         public IActionResult GetPlayer(int playerId)
         {
@@ -43,14 +46,13 @@ namespace Connect4_Server.Controllers
         }
 
         // GET: api/GameApi/current
+        // Reads the currently logged-in player from ASP.NET Session ("CurrentPlayerId").
         [HttpGet("current")]
         public IActionResult GetCurrentPlayer()
         {
             var currentPlayerId = HttpContext.Session.GetInt32("CurrentPlayerId");
             if (currentPlayerId == null)
-            {
                 return Unauthorized(new { message = "No player is currently logged in." });
-            }
 
             var player = _context.Players
                 .Where(p => p.Id == currentPlayerId.Value)
@@ -65,14 +67,13 @@ namespace Connect4_Server.Controllers
                 .FirstOrDefault();
 
             if (player == null)
-            {
                 return NotFound(new { message = "Player not found." });
-            }
 
             return Ok(player);
         }
 
         // POST: api/GameApi/start
+        // Starts a new game for the given external PlayerId. Initializes an empty 6x7 board.
         [HttpPost("start")]
         public IActionResult StartGame([FromBody] StartGameRequest request)
         {
@@ -80,13 +81,13 @@ namespace Connect4_Server.Controllers
             if (player == null)
                 return NotFound(new { message = "Player not found" });
 
-            // Initialize empty board (0s)
+            // Initialize empty board (all zeros)
             var board = new int[Rows, Cols];
             var serialized = SerializeBoard(board);
 
             var game = new Game
             {
-                // IMPORTANT: FK is Player.Id (DB PK), not Player.PlayerId (external)
+                // IMPORTANT: FK is Player.Id (DB PK), not Player.PlayerId (external).
                 PlayerId = player.Id,
                 StartTime = DateTime.UtcNow,
                 Moves = serialized,
@@ -99,7 +100,7 @@ namespace Connect4_Server.Controllers
             var state = new GameStateDto
             {
                 GameId = game.Id,
-                Board = ToJagged(board),   // JSON-safe jagged array
+                Board = ToJagged(board),   // JSON-friendly jagged array
                 CurrentPlayer = 1,
                 Status = "ongoing"
             };
@@ -108,6 +109,7 @@ namespace Connect4_Server.Controllers
         }
 
         // POST: api/GameApi/move
+        // Applies a human move (column 0..6), then a random legal server move if the game isn't over yet.
         [HttpPost("move")]
         public IActionResult MakeMove([FromBody] MoveRequest request)
         {
@@ -117,21 +119,23 @@ namespace Connect4_Server.Controllers
 
             var board = ParseBoard(game.Moves);
 
-            // ---- Helper to get next move number ----
+            // Local helper: returns next move sequence number for this game (1-based).
             int NextMoveNumber()
             {
-                // שואב את המקסימום הקיים למשחק הזה ומוסיף 1
-                var max = _context.Moves.Where(m => m.GameId == game.Id)
-                                        .Select(m => (int?)m.MoveNumber)
-                                        .Max() ?? 0;
+                // Fetch current max MoveNumber for the game and increment by 1.
+                var max = _context.Moves
+                    .Where(m => m.GameId == game.Id)
+                    .Select(m => (int?)m.MoveNumber)
+                    .Max() ?? 0;
                 return max + 1;
             }
 
-            // ---- HUMAN move ----
+            // --- HUMAN move ---
+            // Assumes request.Column is in [0..6]. The client is expected to enforce this.
             if (!DropDisc(board, request.Column, 1))
                 return BadRequest(new { message = "Invalid move" });
 
-            // שמירת מהלך השחקן (עמודה 0..6)
+            // Persist player's move (column 0..6)
             _context.Moves.Add(new Move
             {
                 GameId = game.Id,
@@ -170,15 +174,17 @@ namespace Connect4_Server.Controllers
                 return Ok(new MoveResponse { Board = ToJagged(board), CurrentPlayer = 0, Status = "draw", Moves = movesList });
             }
 
-            // ---- SERVER random move ----
+            // --- SERVER random move ---
+            // Using a per-request Random; acceptable for this project (no need for smarter AI).
             var rnd = new Random();
             var legalCols = Enumerable.Range(0, Cols).Where(c => board[0, c] == 0).ToList();
+
             if (legalCols.Count > 0)
             {
                 var serverCol = legalCols[rnd.Next(legalCols.Count)];
                 DropDisc(board, serverCol, 2);
 
-                // שמירת מהלך השרת
+                // Persist server's move
                 _context.Moves.Add(new Move
                 {
                     GameId = game.Id,
@@ -218,7 +224,7 @@ namespace Connect4_Server.Controllers
                 return Ok(new MoveResponse { Board = ToJagged(board), CurrentPlayer = 0, Status = "draw", Moves = movesList });
             }
 
-            // Ongoing
+            // Game continues
             game.Moves = SerializeBoard(board);
             _context.SaveChanges();
 
@@ -230,8 +236,8 @@ namespace Connect4_Server.Controllers
             return Ok(new MoveResponse { Board = ToJagged(board), CurrentPlayer = 1, Status = "ongoing", Moves = ongoingMoves });
         }
 
-
         // GET: api/GameApi/{gameId}
+        // Returns current game state (board, status, move list) for a given game.
         [HttpGet("{gameId:int}")]
         public IActionResult GetGame(int gameId)
         {
@@ -244,7 +250,7 @@ namespace Connect4_Server.Controllers
             var state = new GameStateDto
             {
                 GameId = game.Id,
-                Board = ToJagged(board), // JSON-safe jagged array
+                Board = ToJagged(board), // JSON-friendly jagged array
                 CurrentPlayer = (game.Result == GameResult.Unknown) ? 1 : 0,
                 Status = game.Result switch
                 {
@@ -263,8 +269,9 @@ namespace Connect4_Server.Controllers
             return Ok(state);
         }
 
+        // ----------------- Helpers: board & serialization -----------------
 
-        // --- Helpers (board/serialization) ---
+        // Drops a disc for 'player' into 'col'. Returns false if column is full.
         private bool DropDisc(int[,] board, int col, int player)
         {
             for (int row = Rows - 1; row >= 0; row--)
@@ -278,6 +285,7 @@ namespace Connect4_Server.Controllers
             return false;
         }
 
+        // Checks whether 'player' has a connect-4 in any direction.
         private bool CheckWin(int[,] board, int player)
         {
             int[][] directions = {
@@ -298,7 +306,8 @@ namespace Connect4_Server.Controllers
                         {
                             count++;
                             if (count >= 4) return true;
-                            nr += d[0]; nc += d[1];
+                            nr += d[0];
+                            nc += d[1];
                         }
                     }
                 }
@@ -306,6 +315,7 @@ namespace Connect4_Server.Controllers
             return false;
         }
 
+        // A draw occurs when the top row is fully occupied (no more legal moves).
         private bool IsDraw(int[,] board)
         {
             for (int c = 0; c < Cols; c++)
@@ -313,6 +323,7 @@ namespace Connect4_Server.Controllers
             return true;
         }
 
+        // Parses a CSV string of length Rows*Cols back into a 2D array.
         private int[,] ParseBoard(string moves)
         {
             var flat = moves.Split(',').Select(int.Parse).ToArray();
@@ -322,6 +333,7 @@ namespace Connect4_Server.Controllers
             return board;
         }
 
+        // Flattens a 2D array into a CSV string (Rows*Cols values).
         private string SerializeBoard(int[,] board)
         {
             var flat = new List<int>(Rows * Cols);
@@ -331,6 +343,7 @@ namespace Connect4_Server.Controllers
             return string.Join(",", flat);
         }
 
+        // Converts a 2D array into a jagged array for JSON serialization.
         private static int[][] ToJagged(int[,] board)
         {
             var result = new int[Rows][];
@@ -344,11 +357,12 @@ namespace Connect4_Server.Controllers
         }
     }
 
-    // --- DTOs ---
+    // ----------------- DTOs (API contracts) -----------------
+
     public class PlayerDto
     {
-        public int Id { get; set; }         // DB PK
-        public int PlayerId { get; set; }   // External ID (1..1000)
+        public int Id { get; set; }            // Internal DB PK
+        public int PlayerId { get; set; }      // External ID (1..1000)
         public string FirstName { get; set; }
         public string Phone { get; set; }
         public string Country { get; set; }
@@ -356,39 +370,36 @@ namespace Connect4_Server.Controllers
 
     public class StartGameRequest
     {
-        public int PlayerId { get; set; }   // External ID (1..1000)
+        public int PlayerId { get; set; }      // External ID (1..1000)
     }
 
     public class MoveRequest
     {
         public int GameId { get; set; }
-        public int Column { get; set; }
+        public int Column { get; set; }        // Expected range: 0..6
     }
 
     public class MoveResponse
     {
-        public int[][] Board { get; set; }  // Jagged for JSON
+        public int[][] Board { get; set; }     // Jagged for JSON
         public int CurrentPlayer { get; set; }
         public string Status { get; set; }
-        public List<MoveDto> Moves { get; set; } = new(); // <-- חדש
+        public List<MoveDto> Moves { get; set; } = new();
     }
 
     public class GameStateDto
     {
         public int GameId { get; set; }
-        public int[][] Board { get; set; }  // Jagged for JSON
+        public int[][] Board { get; set; }     // Jagged for JSON
         public int CurrentPlayer { get; set; }
         public string Status { get; set; }
-        public List<MoveDto> Moves { get; set; } = new(); // <-- חדש
+        public List<MoveDto> Moves { get; set; } = new();
     }
-
 
     public class MoveDto
     {
-        public int MoveNumber { get; set; } // 1,2,3...
-        public int Column { get; set; }     // 0..6
+        public int MoveNumber { get; set; }    // 1,2,3...
+        public int Column { get; set; }        // 0..6
         public bool IsPlayerMove { get; set; } // true=Human, false=Server
     }
-
-
 }

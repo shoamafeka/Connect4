@@ -1,11 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data.SqlClient; // If you're on .NET 6/7/8 WinForms, switch to Microsoft.Data.SqlClient and update usings.
+using System.Data.SqlClient; // ADO.NET with SQL Server LocalDB (allowed by the assignment)
 using System.IO;
 
 namespace Connect4_Client
 {
-    // DTOs (C# 7.3-friendly)
+    // -----------------------------
+    // DTOs for the local recording
+    // -----------------------------
+
+    // High-level game info used for listing and picking a replay.
     public class LocalGameInfo
     {
         public int LocalGameId { get; set; }
@@ -14,22 +18,41 @@ namespace Connect4_Client
         public string PlayerName { get; set; }
         public DateTime StartedAtUtc { get; set; }
         public int? DurationSeconds { get; set; }
-        public byte Result { get; set; } // 0=Unknown,1=HumanWin,2=ServerWin,3=Draw
+        public byte Result { get; set; } // 0=Unknown, 1=HumanWin, 2=ServerWin, 3=Draw
     }
 
+    // One recorded move within a local game.
     public class MoveRecord
     {
-        public int TurnIndex { get; set; }  // 0..n
-        public int Column { get; set; }     // 0..6
+        public int TurnIndex { get; set; }   // 0..n (in-order)
+        public int Column { get; set; }      // 0..6
         public byte PlayerType { get; set; } // 1=Human, 2=Server
     }
 
-    /// <summary>
-    /// Local SQL Server LocalDB recorder for Connect4 replays.
-    /// Tables:
-    ///   LocalGames(LocalGameId PK, ServerGameId UNIQUE, PlayerExternalId, PlayerName, StartedAtUtc, DurationSeconds NULL, Result tinyint)
-    ///   LocalMoves(Id PK, LocalGameId FK, TurnIndex UNIQUE per game, Column, PlayerType)
-    /// </summary>
+    // --------------------------------------------------------------------
+    // LocalRecorder: persists games and moves to a SQL Server LocalDB file.
+    // Schema:
+    //   dbo.LocalGames(
+    //     LocalGameId INT IDENTITY PK,
+    //     ServerGameId INT UNIQUE,
+    //     PlayerExternalId INT,
+    //     PlayerName NVARCHAR(50) NULL,
+    //     StartedAtUtc DATETIME NOT NULL,
+    //     DurationSeconds INT NULL,
+    //     Result TINYINT NOT NULL DEFAULT 0)
+    //
+    //   dbo.LocalMoves(
+    //     Id INT IDENTITY PK,
+    //     LocalGameId INT NOT NULL FK -> LocalGames(LocalGameId) ON DELETE CASCADE,
+    //     TurnIndex INT NOT NULL, -- unique per game
+    //     [Column] TINYINT NOT NULL, -- 0..6
+    //     PlayerType TINYINT NOT NULL, -- 1=Human,2=Server
+    //     CONSTRAINT UQ_LocalMoves UNIQUE(LocalGameId, TurnIndex))
+    //
+    // Purpose:
+    // - Satisfies the requirement to locally "record" games and support replay.
+    // - Keeps minimal, self-contained ADO.NET logic (no ORM on client).
+    // --------------------------------------------------------------------
     public class LocalRecorder
     {
         private const string DbName = "Connect4Client";
@@ -37,36 +60,28 @@ namespace Connect4_Client
         private readonly string _mdfPath;
         private readonly string _ldfPath;
 
+        // Connection to master for DB creation.
         private const string MasterConn = @"Data Source=(LocalDB)\MSSQLLocalDB;Integrated Security=True;";
-        private string DbConn
-        {
-            get
-            {
-                return @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename=" + _mdfPath + @";Integrated Security=True;";
-            }
-        }
 
-        public static string DefaultFolder
-        {
-            get
-            {
-                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Connect4", "Client");
-            }
-        }
+        // Connection to the file-attached database.
+        private string DbConn => @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename=" + _mdfPath + @";Integrated Security=True;";
 
-        public static string DefaultMdfPath
-        {
-            get { return Path.Combine(DefaultFolder, "Connect4Client.mdf"); }
-        }
+        // Default folder: %LocalAppData%\Connect4\Client
+        public static string DefaultFolder =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Connect4", "Client");
+
+        public static string DefaultMdfPath => Path.Combine(DefaultFolder, "Connect4Client.mdf");
 
         public LocalRecorder()
         {
+            // Ensure directory and database exist; if missing, create and initialize schema.
             Directory.CreateDirectory(DefaultFolder);
             _mdfPath = DefaultMdfPath;
             _ldfPath = Path.Combine(DefaultFolder, "Connect4Client_log.ldf");
             EnsureDatabaseAndSchema();
         }
 
+        // Ensures the .mdf exists and that schema (tables) are created.
         private void EnsureDatabaseAndSchema()
         {
             // Create database file if missing
@@ -81,7 +96,7 @@ namespace Connect4_Client
                         string mdfEsc = _mdfPath.Replace("'", "''");
                         string ldfEsc = _ldfPath.Replace("'", "''");
 
-                        // Use a direct CREATE DATABASE (no EXEC, no outer variables)
+                        // Create a new LocalDB database backed by specific file paths
                         cmd.CommandText = string.Format(@"
 IF DB_ID(N'{0}') IS NULL
 BEGIN
@@ -95,7 +110,7 @@ END", DbName, mdfEsc, ldfEsc);
                 }
             }
 
-            // Attach (auto-attach via AttachDbFilename) and ensure tables
+            // Attach (via AttachDbFilename) and ensure tables exist
             using (var conn2 = new SqlConnection(DbConn))
             {
                 conn2.Open();
@@ -132,14 +147,14 @@ END";
             }
         }
 
-
-        /// <summary>Creates or returns an existing LocalGameId for the given serverGameId.</summary>
+        // Creates a local game row for a given server-side GameId, or returns existing LocalGameId.
         public int EnsureLocalGame(int serverGameId, int playerExternalId, string playerName, DateTime startedAtUtc)
         {
             using (var conn = new SqlConnection(DbConn))
             {
                 conn.Open();
 
+                // Check if we already recorded this server game id
                 using (var check = new SqlCommand("SELECT LocalGameId FROM dbo.LocalGames WHERE ServerGameId=@g", conn))
                 {
                     check.Parameters.AddWithValue("@g", serverGameId);
@@ -148,6 +163,7 @@ END";
                         return Convert.ToInt32(v);
                 }
 
+                // Insert a new local game row
                 using (var ins = new SqlCommand(@"
 INSERT INTO dbo.LocalGames(ServerGameId,PlayerExternalId,PlayerName,StartedAtUtc,Result)
 VALUES(@g,@p,@n,@s,0);
@@ -162,7 +178,7 @@ SELECT SCOPE_IDENTITY();", conn))
             }
         }
 
-        /// <summary>Append a move (turnIndex increases monotonically 0..n).</summary>
+        // Appends one move to the local recording (TurnIndex is unique per LocalGameId).
         public void AddMove(int localGameId, int turnIndex, int column, byte playerType)
         {
             using (var conn = new SqlConnection(DbConn))
@@ -181,7 +197,7 @@ VALUES(@g,@t,@c,@p);", conn))
             }
         }
 
-        /// <summary>Mark game as finished.</summary>
+        // Marks a game as finished with final result and total duration.
         public void FinishGame(int localGameId, byte result, int durationSeconds)
         {
             using (var conn = new SqlConnection(DbConn))
@@ -198,7 +214,7 @@ VALUES(@g,@t,@c,@p);", conn))
             }
         }
 
-        /// <summary>List locally recorded games for a specific player.</summary>
+        // Lists all locally recorded games for the given external player id (most recent first).
         public List<LocalGameInfo> ListGamesForPlayer(int playerExternalId)
         {
             var res = new List<LocalGameInfo>();
@@ -216,14 +232,16 @@ ORDER BY StartedAtUtc DESC;", conn))
                     {
                         while (rd.Read())
                         {
-                            var info = new LocalGameInfo();
-                            info.LocalGameId = rd.GetInt32(0);
-                            info.ServerGameId = rd.GetInt32(1);
-                            info.PlayerExternalId = rd.GetInt32(2);
-                            info.PlayerName = rd.GetString(3);
-                            info.StartedAtUtc = rd.GetDateTime(4);
-                            info.DurationSeconds = rd.IsDBNull(5) ? (int?)null : rd.GetInt32(5);
-                            info.Result = rd.GetByte(6);
+                            var info = new LocalGameInfo
+                            {
+                                LocalGameId = rd.GetInt32(0),
+                                ServerGameId = rd.GetInt32(1),
+                                PlayerExternalId = rd.GetInt32(2),
+                                PlayerName = rd.GetString(3),
+                                StartedAtUtc = rd.GetDateTime(4),
+                                DurationSeconds = rd.IsDBNull(5) ? (int?)null : rd.GetInt32(5),
+                                Result = rd.GetByte(6)
+                            };
                             res.Add(info);
                         }
                     }
@@ -232,7 +250,7 @@ ORDER BY StartedAtUtc DESC;", conn))
             return res;
         }
 
-        /// <summary>Load ordered moves for a recorded game.</summary>
+        // Loads all moves for a recorded local game (ordered by TurnIndex).
         public List<MoveRecord> LoadMoves(int localGameId)
         {
             var res = new List<MoveRecord>();
@@ -250,10 +268,12 @@ ORDER BY TurnIndex;", conn))
                     {
                         while (rd.Read())
                         {
-                            var mv = new MoveRecord();
-                            mv.TurnIndex = rd.GetInt32(0);          // INT
-                            mv.Column = rd.GetByte(1);           // TINYINT -> byte -> (widen) int
-                            mv.PlayerType = rd.GetByte(2);           // TINYINT -> byte
+                            var mv = new MoveRecord
+                            {
+                                TurnIndex = rd.GetInt32(0),         // INT
+                                Column = rd.GetByte(1),             // TINYINT -> byte (widened to int)
+                                PlayerType = rd.GetByte(2)          // TINYINT -> byte
+                            };
                             res.Add(mv);
                         }
                     }
@@ -262,8 +282,7 @@ ORDER BY TurnIndex;", conn))
             return res;
         }
 
-
-        /// <summary>Find local game id by the server's GameId (for launching replay from the website).</summary>
+        // Resolves a LocalGameId given a server-side GameId (used when launching a replay from the website).
         public int? FindLocalGameIdByServerGameId(int serverGameId)
         {
             using (var conn = new SqlConnection(DbConn))

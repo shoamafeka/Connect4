@@ -1,39 +1,46 @@
 ﻿@page
+@model Connect4_Server.Pages.RegisterModel
+@{
+    ViewData["Title"] = "Player Registration";
+}
 
+@* Player registration form:
+   - Validates using DataAnnotations with custom messages.
+   - Uses a country combo (per assignment requirement).
+   - On success, stores session keys and shows a TempData status message. *@
 
 @if (TempData["StatusMessage"] is string msg)
 {
     <div class="alert alert-success">@msg</div>
 }
 
-@model Connect4_Server.Pages.RegisterModel
-@{
-    ViewData["Title"] = "Player Registration";
-}
-
 <h2 class="mb-3">Player Registration</h2>
 
-<form method="post" novalidate>
+<form method="post" novalidate asp-antiforgery="true">
     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
 
+    @* First name (required, min 2) *@
     <div class="form-group mb-2">
         <label asp-for="Player.FirstName" class="form-label"></label>
         <input asp-for="Player.FirstName" class="form-control" placeholder="Enter your first name" />
         <span asp-validation-for="Player.FirstName" class="text-danger"></span>
     </div>
 
+    @* External PlayerId (1–1000, unique) *@
     <div class="form-group mb-2">
         <label asp-for="Player.PlayerId" class="form-label">Player ID (1–1000)</label>
         <input asp-for="Player.PlayerId" class="form-control" placeholder="Choose a unique number" />
         <span asp-validation-for="Player.PlayerId" class="text-danger"></span>
     </div>
 
+    @* Phone (digits only, 9–11) *@
     <div class="form-group mb-2">
         <label asp-for="Player.Phone" class="form-label"></label>
         <input asp-for="Player.Phone" class="form-control" placeholder="Digits only" />
         <span asp-validation-for="Player.Phone" class="text-danger"></span>
     </div>
 
+    @* Country (combo) *@
     <div class="form-group mb-3">
         <label asp-for="Player.Country" class="form-label">Country</label>
         <select asp-for="Player.Country" class="form-select">
@@ -51,5 +58,6 @@
 </form>
 
 @section Scripts {
+    @* Client-side validation *@
     <partial name="_ValidationScriptsPartial" />
 }

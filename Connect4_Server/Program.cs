@@ -3,18 +3,23 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// EF Core DbContext
+// --------------------- Services registration ---------------------
+
+// EF Core DbContext (SQL Server). Connection string: appsettings.json -> "DefaultConnection".
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Razor Pages + Web API
+// Razor Pages (site) + Controllers (Web API endpoints).
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
 
-// Register IHttpClientFactory
+// HttpClient factory (used by NewGame page to call the API).
 builder.Services.AddHttpClient();
 
-// Session (required for HttpContext.Session.GetInt32/SetInt32)
+// Session state:
+// - Backed by in-memory cache (sufficient for this project).
+// - Cookie is HttpOnly + Essential (required for session).
+// - 30 minutes idle timeout.
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
@@ -25,9 +30,11 @@ builder.Services.AddSession(options =>
 
 var app = builder.Build();
 
-// Error handling + HTTPS/static
+// --------------------- HTTP request pipeline ---------------------
+
 if (!app.Environment.IsDevelopment())
 {
+    // Generic error page in Production.
     app.UseExceptionHandler("/Error");
     app.UseHsts();
 }
@@ -37,13 +44,18 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-// Enable session BEFORE authorization/endpoints
+// IMPORTANT: Enable session BEFORE hitting endpoints that read/write session.
 app.UseSession();
 
+// No authentication in this project; authorization remains a no-op.
 app.UseAuthorization();
 
-// Map endpoints
+// --------------------- Endpoints ---------------------
+
+// Web API routes (e.g., /api/GameApi/*)
 app.MapControllers();
+
+// Razor Pages (site UI)
 app.MapRazorPages();
 
 app.Run();

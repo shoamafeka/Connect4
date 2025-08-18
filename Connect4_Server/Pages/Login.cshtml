@@ -4,6 +4,11 @@
     ViewData["Title"] = "Login";
 }
 
+@* Login page
+   - Shows a table of registered players.
+   - Each row posts the internal DB Id of the player to sign in.
+   - External PlayerId is shown for clarity but not used as the session key. *@
+
 <h2>Login</h2>
 
 @if (Model.Players.Any())
@@ -25,7 +30,9 @@
                     <td>@player.FirstName</td>
                     <td>@player.Country</td>
                     <td>
-                        <form method="post">
+                        @* Post the internal DB Id for this player.
+                           Anti-forgery token is explicitly included for safety. *@
+                        <form method="post" asp-antiforgery="true">
                             <input type="hidden" name="playerId" value="@player.Id" />
                             <button type="submit" class="btn btn-primary">Select</button>
                         </form>

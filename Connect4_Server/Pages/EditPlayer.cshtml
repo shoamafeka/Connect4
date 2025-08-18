@@ -1,20 +1,31 @@
 ﻿@page
 @model Connect4_Server.Pages.EditPlayerModel
 @{
-	ViewData["Title"] = "Edit Player";
+    ViewData["Title"] = "Edit Player";
 }
+
+@* Edit Player page
+   - Allows editing basic player fields.
+   - External PlayerId is locked (readonly) once the player has games (Model.HasGames = true).
+   - Client-side validation is enabled via _ValidationScriptsPartial. *@
 
 <h2>Edit Player</h2>
 
-<form method="post">
+<form method="post" asp-antiforgery="true">
+    @* Display model-level validation errors (e.g., uniqueness violations) *@
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    @* Internal DB PK (hidden) *@
     <input type="hidden" asp-for="Player.Id" />
 
+    @* First name (required, min length 2, max length 50) *@
     <div class="form-group">
         <label asp-for="Player.FirstName"></label>
         <input asp-for="Player.FirstName" class="form-control" />
         <span asp-validation-for="Player.FirstName" class="text-danger"></span>
     </div>
 
+    @* External ID (1..1000). If player already has games, prevent changes to preserve referential integrity. *@
     <div class="form-group">
         <label asp-for="Player.PlayerId"></label>
         @if (Model.HasGames)
@@ -29,12 +40,14 @@
         }
     </div>
 
+    @* Phone (9–11 digits, required) *@
     <div class="form-group">
         <label asp-for="Player.Phone"></label>
         <input asp-for="Player.Phone" class="form-control" />
         <span asp-validation-for="Player.Phone" class="text-danger"></span>
     </div>
 
+    @* Country (required) *@
     <div class="form-group">
         <label asp-for="Player.Country"></label>
         <input asp-for="Player.Country" class="form-control" />
@@ -46,5 +59,6 @@
 </form>
 
 @section Scripts {
+    @* Client-side validation *@
     <partial name="_ValidationScriptsPartial" />
 }
