@@ -136,6 +136,7 @@
       <DependentUpon>Form1.cs</DependentUpon>
     </Compile>
     <Compile Include="GameStateDto.cs" />
+    <Compile Include="LocalRecorder.cs" />
     <Compile Include="PlayerDto.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

@@ -4,6 +4,16 @@
     ViewData["Title"] = "Player Queries";
 }
 
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">@TempData["Error"]</div>
+}
+@if (TempData["Info"] != null)
+{
+    <div class="alert alert-info">@TempData["Info"]</div>
+}
+
+
 <h2>All Registered Players</h2>
 
 <h4>Select a player:</h4>
@@ -61,6 +71,7 @@
                 <th>Start Time</th>
                 <th>Duration</th>
                 <th>Moves</th>
+                <th>Actions</th> 
             </tr>
         </thead>
         <tbody>
@@ -70,11 +81,22 @@
                     <td>@game.StartTime.ToString("yyyy-MM-dd HH:mm")</td>
                     <td>@game.Duration.ToString(@"hh\:mm\:ss")</td>
                     <td>@game.MovesColumns</td>
+                    <td>
+                        <form method="post" asp-page-handler="Replay" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="gameId" value="@game.GameId" />
+                            <input type="hidden" name="playerId" value="@Model.SelectedPlayerId" />
+                            <button type="submit" class="btn btn-sm btn-outline-primary">
+                                Replay this game
+                            </button>
+                        </form>
+                    </td>
                 </tr>
             }
         </tbody>
     </table>
 }
+
 
 <hr class="mt-5" />
 

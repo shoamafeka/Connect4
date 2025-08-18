@@ -5,6 +5,10 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
+using Microsoft.Extensions.Configuration;
+
+
 
 namespace Connect4_Server.Pages
 {
@@ -15,10 +19,10 @@ namespace Connect4_Server.Pages
         public DateTime StartTime { get; set; }
         public TimeSpan Duration { get; set; }
 
-        // מה שנציג בטבלאות: רשימת עמודות לפי סדר תורות (0..6)
+       
         public string MovesColumns { get; set; } = string.Empty;
 
-        // אופציונלי: להשאיר את ה-board השטוח למקרה שתרצה להציגו ב-<details>
+      
         public string? RawBoard { get; set; }
     }
 
@@ -59,10 +63,13 @@ namespace Connect4_Server.Pages
         public List<Player> Players { get; set; } = new();
 
         private readonly AppDbContext _context;
+        private readonly IConfiguration _config;
 
-        public QueriesModel(AppDbContext context)
+
+        public QueriesModel(AppDbContext context, IConfiguration config)
         {
             _context = context;
+            _config = config;
         }
 
         [BindProperty(SupportsGet = true)]
@@ -270,5 +277,43 @@ namespace Connect4_Server.Pages
             }
             return RedirectToPage();
         }
+
+        [ValidateAntiForgeryToken]
+        public IActionResult OnPostReplay(int gameId, int playerId)
+        {
+            // 1) exe path מהקונפיג
+            var exe = _config["ClientExePath"];
+            if (string.IsNullOrWhiteSpace(exe) || !System.IO.File.Exists(exe))
+            {
+                TempData["Error"] = "ClientExePath not configured or file not found.";
+                return RedirectToPage(new { SelectedPlayerId = playerId });
+            }
+
+            // 2) בסיס ה-API לקליינט
+            var apiBase = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/GameApi/";
+
+            // 3) הפעלת הקליינט עם פרמטרים
+            var psi = new ProcessStartInfo
+            {
+                FileName = exe,
+                Arguments = $"--replayServerGameId={gameId} --playerId={playerId} --api=\"{apiBase}\"",
+                UseShellExecute = true,
+                WorkingDirectory = System.IO.Path.GetDirectoryName(exe)
+            };
+
+            try
+            {
+                Process.Start(psi);
+                TempData["Info"] = $"Launching replay for game #{gameId}…";
+            }
+            catch (Exception ex)
+            {
+                TempData["Error"] = "Failed to launch client: " + ex.Message;
+            }
+
+            return RedirectToPage(new { SelectedPlayerId = playerId });
+        }
+
+
     }
 }

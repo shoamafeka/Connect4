@@ -43,10 +43,30 @@ namespace Connect4_Client
 
         // --- HTTP ---
         private HttpClient _http; // will be created after _apiBase is finalized
+        
+        // --- Local recording ---
+        private LocalRecorder _rec;
+        private int _localGameId = -1;     // local id in LocalGames
+        private int _turnIndex = 0;        // 0..n
+        private DateTime _gameStartUtc;    // for duration
+
+        // --- Replay state ---
+        private Timer _replayTimer;
+        private List<MoveRecord> _replayMoves;
+        private int _replayIndex;
+        private bool _isReplayMode = false;
+
+
+        // Board snapshot used only to detect server column from diff
+        private int[,] _beforeBoard = new int[6, 7]; // adjust to your Rows/Cols if different
+
+
 
         public Form1()
         {
             InitializeComponent();
+            _rec = new LocalRecorder();
+        
             this.Load += Form1_Load;
         }
 
@@ -103,11 +123,10 @@ namespace Connect4_Client
             return result;
         }
 
-        // Parse command-line args: --gameId=123 --playerId=45 --api="https://.../api/GameApi/"
-        private (int? gameId, int? playerId, string api) ParseArgs()
+        // Parse command-line args: --gameId=123 --playerId=45 --api="https://.../api/GameApi/" --replayServerGameId=123
+        private (int? gameId, int? playerId, string api, int? replayServerGameId) ParseArgs()
         {
-            int? gameId = null;
-            int? playerId = null;
+            int? gameId = null, playerId = null, replay = null;
             string api = null;
 
             foreach (var arg in Environment.GetCommandLineArgs())
@@ -116,6 +135,11 @@ namespace Connect4_Client
                 {
                     var val = arg.Substring("--gameId=".Length).Trim('"');
                     if (int.TryParse(val, out int g)) gameId = g;
+                }
+                else if (arg.StartsWith("--replayServerGameId=", StringComparison.OrdinalIgnoreCase))
+                {
+                    var val = arg.Substring("--replayServerGameId=".Length).Trim('"');
+                    if (int.TryParse(val, out int r)) replay = r;
                 }
                 else if (arg.StartsWith("--playerId=", StringComparison.OrdinalIgnoreCase))
                 {
@@ -127,8 +151,9 @@ namespace Connect4_Client
                     api = arg.Substring("--api=".Length).Trim('"');
                 }
             }
-            return (gameId, playerId, api);
+            return (gameId, playerId, api, replay);
         }
+
 
         // Prompt for external PlayerId (1..1000) when not provided via args
         private int PromptForExternalPlayerId()
@@ -197,13 +222,56 @@ namespace Connect4_Client
             _dropTimer.Tick += DropTimer_Tick;
 
             // Parse args (may include gameId, playerId, api)
-            var (argGameId, argPlayerId, argApi) = ParseArgs();
+            var (argGameId, argPlayerId, argApi, argReplayServerGameId) = ParseArgs();
             if (!string.IsNullOrWhiteSpace(argApi))
             {
                 _apiBase = argApi.Trim();
                 if (!_apiBase.EndsWith("/")) _apiBase += "/";
             }
             _http = new HttpClient { BaseAddress = new Uri(_apiBase) };
+
+
+            // --- DIRECT REPLAY MODE (runs before any new/existing game flow) ---
+            if (argReplayServerGameId.HasValue)
+            {
+                // Optional: populate label with player info
+                if (argPlayerId.HasValue && argPlayerId.Value > 0)
+                {
+                    _externalPlayerId = argPlayerId.Value;
+                    try
+                    {
+                        var resp = await _http.GetAsync($"player/{_externalPlayerId}");
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            var jsonP = await resp.Content.ReadAsStringAsync();
+                            var p = JsonConvert.DeserializeObject<ApiPlayerDto>(jsonP);
+                            if (p != null)
+                            {
+                                _playerName = p.FirstName ?? "";
+                                _playerPhone = p.Phone ?? "";
+                                _playerCountry = p.Country ?? "";
+                            }
+                        }
+                    }
+                    catch { /* ignore */ }
+                }
+
+                // Look up the local recording by ServerGameId and start replay
+                var localId = _rec.FindLocalGameIdByServerGameId(argReplayServerGameId.Value);
+                if (localId.HasValue)
+                {
+                    StartReplay(localId.Value);
+                    return; // IMPORTANT: stop normal flow
+                }
+                else
+                {
+                    MessageBox.Show("This game is not recorded locally on this machine.", "Replay");
+                    Close();
+                    return;
+                }
+            }
+
+
 
             // If we got a GameId from the website, load that existing game and start immediately
             if (argGameId.HasValue && argGameId.Value > 0)
@@ -296,6 +364,14 @@ namespace Connect4_Client
                 _animQueue.Clear();
                 _currentAnim = null;
 
+                // >>> add this <<<
+                if (!_gameOver)
+                {
+                    if (_externalPlayerId == 0) _externalPlayerId = _externalPlayerId;
+                    StartLocalRecording(_currentGameId.Value, _externalPlayerId, _playerName);
+                }
+
+
                 UpdateInfoLabel();
                 Invalidate();
             }
@@ -329,6 +405,9 @@ namespace Connect4_Client
                     MessageBox.Show("Server did not return a valid GameId.");
                     return;
                 }
+
+                // >>> START LOCAL RECORDING  <<<
+                StartLocalRecording(_currentGameId.Value, _externalPlayerId, _playerName);
 
                 // Initialize boards from server state
                 _board = To2D(data.Board);
@@ -396,6 +475,9 @@ namespace Connect4_Client
 
         protected override async void OnMouseClick(MouseEventArgs e)
         {
+
+            if (_isReplayMode) return;
+
             base.OnMouseClick(e);
 
             if (_gameOver || _isAnimating) return;
@@ -414,6 +496,10 @@ namespace Connect4_Client
         {
             try
             {
+                // Snapshot board BEFORE sending the move (for server column detection later)
+                CopyBoard(_board, _beforeBoard);
+
+
                 // Send the move to the server
                 var req = new ApiMoveRequest { GameId = _currentGameId.Value, Column = col };
                 var jsonBody = JsonConvert.SerializeObject(req);
@@ -436,6 +522,17 @@ namespace Connect4_Client
 
                 // Convert returned board to 2D and animate differences
                 _targetBoard = To2D(data.Board);
+
+                // --- Recording: human move + server move ---
+                // Add human move (only after server accepted it)
+                if (_localGameId > 0)
+                    _rec.AddMove(_localGameId, _turnIndex++, col, 1); // 1 = Human
+
+                // Detect server column from the diff between BEFORE (snapshot) and target from server
+                int serverColDetected = DetectServerColumnFromDiff(_beforeBoard, _targetBoard);
+                if (_localGameId > 0 && serverColDetected >= 0)
+                    _rec.AddMove(_localGameId, _turnIndex++, serverColDetected, 2); // 2 = Server
+
                 PrepareAnimationsFromDiff(_board, _targetBoard);
                 if (_animQueue.Count > 0)
                 {
@@ -549,6 +646,19 @@ namespace Connect4_Client
                         else if (_pendingEndStatus == "draw")
                             MessageBox.Show("It's a draw!", "Game Over");
 
+
+                        // --- Recording: finalize game row with result/duration ---
+                        if (!string.IsNullOrEmpty(_pendingEndStatus) && _localGameId > 0)
+                        {
+                            byte result = 0; // 0=Unknown, 1=HumanWin, 2=ServerWin, 3=Draw
+                            if (_pendingEndStatus == "player_won") result = 1;
+                            else if (_pendingEndStatus == "server_won") result = 2;
+                            else if (_pendingEndStatus == "draw") result = 3;
+
+                            int durationSeconds = (int)(DateTime.UtcNow - _gameStartUtc).TotalSeconds;
+                            _rec.FinishGame(_localGameId, result, durationSeconds);
+                        }
+
                         _gameOver = true;
                         _pendingEndStatus = null;
                     }
@@ -559,5 +669,126 @@ namespace Connect4_Client
                 _currentAnim.CurrentRow++;
             }
         }
+
+         //--- Recording: call this right after you get the server GameId ---
+        private void StartLocalRecording(int serverGameId, int playerExternalId, string playerName)
+        {
+            // Store start time and open (or create) a local game row
+            _gameStartUtc = DateTime.UtcNow;
+            _localGameId = _rec.EnsureLocalGame(serverGameId, playerExternalId, playerName, _gameStartUtc);
+            _turnIndex = 0; // first move will be turnIndex 0
+        }
+
+        // Deep-copy a 2D board (source -> destination)
+        private void CopyBoard(int[,] src, int[,] dst)
+        {
+            int rows = src.GetLength(0);
+            int cols = src.GetLength(1);
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    dst[r, c] = src[r, c];
+        }
+
+        // Find the column where the server dropped a '2' between two board states
+        private int DetectServerColumnFromDiff(int[,] before, int[,] after)
+        {
+            int rows = before.GetLength(0);
+            int cols = before.GetLength(1);
+
+            for (int c = 0; c < cols; c++)
+            {
+                for (int r = rows - 1; r >= 0; r--)
+                {
+                    if (before[r, c] != after[r, c])
+                    {
+                        if (after[r, c] == 2 && before[r, c] == 0)
+                            return c; // server disc appeared here
+                        break;
+                    }
+                }
+            }
+            return -1; // not found yet (e.g., player already won and server didn't move)
+        }
+
+        private int GetDropRow(int[,] b, int col)
+        {
+            for (int r = Rows - 1; r >= 0; r--)
+                if (b[r, col] == 0) return r;
+            return -1;
+        }
+
+        private void ResetBoardToEmpty()
+        {
+            for (int r = 0; r < Rows; r++)
+                for (int c = 0; c < Cols; c++)
+                {
+                    _board[r, c] = 0;
+                    _targetBoard[r, c] = 0;
+                }
+            _gameOver = false;
+            _isAnimating = false;
+            _animQueue.Clear();
+            _currentAnim = null;
+            Invalidate();
+        }
+
+        private void StartReplay(int localGameId)
+        {
+            _isReplayMode = true;
+            ResetBoardToEmpty();
+
+            _replayMoves = _rec.LoadMoves(localGameId);
+            _replayIndex = 0;
+
+            if (_replayTimer == null)
+            {
+                _replayTimer = new Timer();
+                _replayTimer.Interval = 600; // fixed interval per requirement
+                _replayTimer.Tick += ReplayTimer_Tick;
+            }
+            _replayTimer.Stop();
+            _replayTimer.Start();
+
+            _lblInfo.Text = "Replay mode (local recording)";
+        }
+
+        private void ReplayTimer_Tick(object sender, EventArgs e)
+        {
+            // wait until current animation finishes
+            if (_isAnimating) return;
+
+            if (_replayMoves == null || _replayIndex >= _replayMoves.Count)
+            {
+                _replayTimer.Stop();
+                _isReplayMode = false;
+                _lblInfo.Text = "Replay finished.";
+                return;
+            }
+
+            var mv = _replayMoves[_replayIndex++];
+
+            // build next target state for this single drop
+            int row = GetDropRow(_targetBoard, mv.Column);
+            if (row < 0) return; // defensive: column full
+            _targetBoard[row, mv.Column] = mv.PlayerType;
+
+            // animate via existing pipeline
+            PrepareAnimationsFromDiff(_board, _targetBoard);
+            if (_animQueue.Count > 0)
+            {
+                _isAnimating = true;
+                _currentAnim = _animQueue.Dequeue();
+                _currentAnim.CurrentRow = 0;
+                _dropTimer.Start();
+            }
+            else
+            {
+                _board = (int[,])_targetBoard.Clone();
+                Invalidate();
+            }
+        }
+
+
+
     }
 }
